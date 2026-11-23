@@ -89,17 +89,20 @@ impl BlockStateResolver {
         }
 
         // Transform properties for rotation/mirror using the unified vanilla logic
-        let state_id = if rotation == Rotation::None && mirror == Mirror::None {
-            block.from_properties(&entry.properties).to_state_id(block)
-        } else {
-            let transformed_props = pumpkin_data::transform_block_properties(
-                &entry.name,
-                &entry.properties,
-                rotation,
-                mirror,
-            );
-            block.from_properties(&transformed_props).to_state_id(block)
-        };
+        let state_id = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            if rotation == Rotation::None && mirror == Mirror::None {
+                block.from_properties(&entry.properties).to_state_id(block)
+            } else {
+                let transformed_props = pumpkin_data::transform_block_properties(
+                    &entry.name,
+                    &entry.properties,
+                    rotation,
+                    mirror,
+                );
+                block.from_properties(&transformed_props).to_state_id(block)
+            }
+        }))
+        .unwrap_or(block.default_state.id);
 
         Some(BlockState::from_id(state_id))
     }

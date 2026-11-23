@@ -95,7 +95,9 @@ fn section_y(section: &NbtCompound) -> i32 {
 /// That gives `-4` in the Overworld and `0` in the Nether and End, which are
 /// the section minimums of those dimensions.
 fn lowest_biome_section_y(root_tag: &NbtCompound) -> Option<i32> {
-    let sections = root_tag.get_list("sections")?;
+    let sections = root_tag
+        .get_list("sections")
+        .or_else(|| root_tag.get_list("Sections"))?;
     sections
         .iter()
         .filter_map(|tag| match tag {
@@ -236,7 +238,20 @@ impl ChunkData {
         }
         .map_err(|e| ChunkParsingError::ErrorDeserializingChunk(e.to_string()))?;
 
-        let root_tag = nbt.root_tag;
+        let mut root_tag = nbt.root_tag;
+        let is_legacy =
+            root_tag.get_int("xPos").is_none() && root_tag.child_tags.contains_key("Level");
+        let root_tag = if is_legacy {
+            if let Some(pumpkin_nbt::tag::NbtTag::Compound(level)) =
+                root_tag.child_tags.remove("Level")
+            {
+                level
+            } else {
+                root_tag
+            }
+        } else {
+            root_tag
+        };
 
         let x_pos = root_tag.get_int("xPos").ok_or_else(|| {
             ChunkParsingError::ErrorDeserializingChunk("Missing xPos".to_string())
@@ -257,9 +272,11 @@ impl ChunkData {
         // stores biomes. Do the same instead of rejecting the chunk.
         let min_y_section = match root_tag.get_int("yPos") {
             Some(y_pos) => y_pos,
-            None => lowest_biome_section_y(&root_tag).ok_or_else(|| {
-                ChunkParsingError::ErrorDeserializingChunk("Missing yPos".to_string())
-            })?,
+            None => lowest_biome_section_y(&root_tag)
+                .or_else(|| if is_legacy { Some(-4) } else { None })
+                .ok_or_else(|| {
+                    ChunkParsingError::ErrorDeserializingChunk("Missing yPos".to_string())
+                })?,
         };
 
         // Section indices are bytes in this format, and the loops below already
@@ -272,7 +289,10 @@ impl ChunkData {
         };
 
         let mut max_y_section = min_y_section;
-        if let Some(sections_list) = root_tag.get_list("sections") {
+        let sections_list = root_tag
+            .get_list("sections")
+            .or_else(|| root_tag.get_list("Sections"));
+        if let Some(sections_list) = sections_list {
             for section_tag in sections_list {
                 if let pumpkin_nbt::tag::NbtTag::Compound(section_compound) = section_tag {
                     let y = section_y(section_compound) as i8;
@@ -282,6 +302,9 @@ impl ChunkData {
                 }
             }
         }
+        if is_legacy && max_y_section < 19 {
+            max_y_section = 19;
+        }
 
         let section_count =
             (i32::from(max_y_section) - i32::from(min_y_section) + 1).max(0) as usize;
@@ -290,7 +313,7 @@ impl ChunkData {
         let mut block_palettes = vec![BlockPalette::default(); section_count];
         let mut biome_palettes = vec![BiomePalette::default(); section_count];
 
-        if let Some(sections_list) = root_tag.get_list("sections") {
+        if let Some(sections_list) = sections_list {
             for section_tag in sections_list {
                 if let pumpkin_nbt::tag::NbtTag::Compound(section_compound) = section_tag {
                     let y = section_y(section_compound);
@@ -344,6 +367,17 @@ impl ChunkData {
                             .map(|arr| arr.to_vec().into_boxed_slice());
                         let palette = bs_compound
                             .get("palette")
+                            .and_then(extract_u16_array)
+                            .unwrap_or_else(|| vec![BlockStateId::AIR].into_boxed_slice());
+
+                        block_palettes[index] =
+                            BlockPalette::from_disk_nbt(ChunkSectionBlockStates { data, palette });
+                    } else if section_compound.has("Palette") {
+                        let data = section_compound
+                            .get_long_array("BlockStates")
+                            .map(|arr| arr.to_vec().into_boxed_slice());
+                        let palette = section_compound
+                            .get("Palette")
                             .and_then(extract_u16_array)
                             .unwrap_or_else(|| vec![BlockStateId::AIR].into_boxed_slice());
 
@@ -414,7 +448,10 @@ impl ChunkData {
             },
         );
         let mut block_ticks = Vec::new();
-        if let Some(list) = root_tag.get_list("block_ticks") {
+        let block_ticks_list = root_tag
+            .get_list("block_ticks")
+            .or_else(|| root_tag.get_list("TileTicks"));
+        if let Some(list) = block_ticks_list {
             for tag in list {
                 if let pumpkin_nbt::tag::NbtTag::Compound(compound) = tag
                     && let Some(tick) = parse_scheduled_tick::<&'static Block>(compound)
@@ -425,7 +462,10 @@ impl ChunkData {
         }
 
         let mut fluid_ticks = Vec::new();
-        if let Some(list) = root_tag.get_list("fluid_ticks") {
+        let fluid_ticks_list = root_tag
+            .get_list("fluid_ticks")
+            .or_else(|| root_tag.get_list("LiquidTicks"));
+        if let Some(list) = fluid_ticks_list {
             for tag in list {
                 if let pumpkin_nbt::tag::NbtTag::Compound(compound) = tag
                     && let Some(tick) = parse_scheduled_tick::<&'static Fluid>(compound)
@@ -436,7 +476,10 @@ impl ChunkData {
         }
 
         let mut block_entities = FxHashMap::default();
-        if let Some(list) = root_tag.get_list("block_entities") {
+        let block_entities_list = root_tag
+            .get_list("block_entities")
+            .or_else(|| root_tag.get_list("TileEntities"));
+        if let Some(list) = block_entities_list {
             for tag in list {
                 if let pumpkin_nbt::tag::NbtTag::Compound(nbt) = tag
                     && let Some(x) = nbt.get_int("x")
@@ -451,18 +494,17 @@ impl ChunkData {
         let light_correct = root_tag.get_bool("isLightOn").unwrap_or(false);
 
         let status_str = root_tag.get_string("Status").unwrap_or("minecraft:empty");
-        let status = match status_str {
-            "minecraft:structure_starts" => ChunkStatus::StructureStarts,
-            "minecraft:structure_references" => ChunkStatus::StructureReferences,
-            "minecraft:biomes" => ChunkStatus::Biomes,
-            "minecraft:terrain" | "minecraft:noise" | "minecraft:surface" | "minecraft:carvers" => {
-                ChunkStatus::Terrain
-            }
-            "minecraft:features" => ChunkStatus::Features,
-            "minecraft:initialize_light" => ChunkStatus::InitializeLight,
-            "minecraft:light" => ChunkStatus::Light,
-            "minecraft:spawn" => ChunkStatus::Spawn,
-            "minecraft:full" => ChunkStatus::Full,
+        let status_normalized = status_str.strip_prefix("minecraft:").unwrap_or(status_str);
+        let status = match status_normalized {
+            "structure_starts" => ChunkStatus::StructureStarts,
+            "structure_references" => ChunkStatus::StructureReferences,
+            "biomes" => ChunkStatus::Biomes,
+            "terrain" | "noise" | "surface" | "carvers" => ChunkStatus::Terrain,
+            "features" => ChunkStatus::Features,
+            "initialize_light" => ChunkStatus::InitializeLight,
+            "light" => ChunkStatus::Light,
+            "spawn" => ChunkStatus::Spawn,
+            "full" | "postprocessed" => ChunkStatus::Full,
             _ => ChunkStatus::Empty,
         };
 

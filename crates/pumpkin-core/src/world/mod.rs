@@ -3929,15 +3929,9 @@ impl World {
             (position, yaw, pitch)
         } else {
             let info = &self.level_info.load();
-            let spawn_position = Vector2::new(info.spawn_x, info.spawn_z);
             let chunk_pos = Vector2::new(info.spawn_x >> 4, info.spawn_z >> 4);
             self.level.get_or_fetch_chunk(chunk_pos, |_| ()).await;
-            let top = self.get_top_block(spawn_position);
-            let pos_y = if top > self.dimension.min_y {
-                top + 1
-            } else {
-                info.spawn_y
-            };
+            let pos_y = info.spawn_y;
 
             let position = Vector3::new(
                 f64::from(info.spawn_x) + 0.5,

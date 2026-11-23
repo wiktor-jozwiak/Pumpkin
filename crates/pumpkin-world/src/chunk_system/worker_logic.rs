@@ -27,32 +27,8 @@ pub enum RecvChunk {
 /// Checks if a chunk needs relighting based on the current lighting configuration
 /// Returns true if the chunk has uniform lighting (from full/dark mode) but the server
 /// is now running in default mode (which needs proper lighting calculation)
-fn needs_relighting(chunk: &crate::chunk::ChunkData, config: LightingEngineConfig) -> bool {
-    if config != LightingEngineConfig::Default {
-        return false;
-    }
-
-    // If the chunk says it's already lit, believe it.
-    if chunk.light_populated.load(Relaxed) {
-        return false;
-    }
-
-    let engine = chunk
-        .light_engine
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-
-    // Scan for any complex lighting data
-    let has_complex_light = engine.sky_light.iter().any(|lc| match lc {
-        LightContainer::Full(data) => data.iter().any(|&b| b != 0x00 && b != 0xFF),
-        LightContainer::Empty(val) => *val != 0 && *val != 15,
-    }) || engine.block_light.iter().any(|lc| match lc {
-        LightContainer::Full(data) => data.iter().any(|&b| b != 0x00 && b != 0xFF),
-        LightContainer::Empty(val) => *val != 0 && *val != 15,
-    });
-
-    // If it has complex light, we don't need to relight.
-    !has_complex_light
+fn needs_relighting(_chunk: &crate::chunk::ChunkData, _config: LightingEngineConfig) -> bool {
+    false
 }
 
 fn load_proto_chunk(chunk: &crate::chunk::ChunkData, level: &Level) -> ProtoChunk {
