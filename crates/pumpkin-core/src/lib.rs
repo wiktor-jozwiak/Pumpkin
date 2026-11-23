@@ -261,7 +261,6 @@ pub async fn serve_java_connection(server: Arc<Server>, mut pending: PendingConn
 
                     // Close when done
                     client.close();
-                    client.await_tasks().await;
                 }
                 player.remove().await;
                 server.remove_player(&player);
@@ -270,6 +269,10 @@ pub async fn serve_java_connection(server: Arc<Server>, mut pending: PendingConn
                 }
                 if let Err(e) = server.advancement_manager.save_player(&player).await {
                     error!("Failed to save player advancement on disconnect: {e}");
+                }
+
+                if let ClientPlatform::Java(client) = player.client.as_ref() {
+                    client.await_tasks().await;
                 }
             }
         }
@@ -755,13 +758,13 @@ impl PumpkinServer {
                     ) {
                         client.progress_player_packets(&player).await;
                         client.close().await;
-                        client.await_tasks().await;
                         player.remove().await;
                         server.remove_player(&player);
                         if let Err(error) = server.player_data_storage.handle_player_leave(&player)
                         {
                             error!("Failed to save player data on disconnect: {error}");
                         }
+                        client.await_tasks().await;
                     }
                 }
             }

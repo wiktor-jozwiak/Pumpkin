@@ -42,6 +42,19 @@ impl PendingConnection {
                 Ok((profile, new_address)) => {
                     self.gameprofile = Some(profile.clone());
                     self.address = new_address;
+                    if let Some(old_player) = server.get_player_by_uuid(profile.id) {
+                        tracing::warn!(
+                            "Disconnecting stale session for {} ({}) on new login",
+                            profile.name, profile.id
+                        );
+                        old_player.kick(
+                            crate::DisconnectReason::Kicked,
+                            &TextComponent::text("Logged in from another location"),
+                        );
+                        if let crate::ClientPlatform::Java(client) = old_player.client.as_ref() {
+                            client.close();
+                        }
+                    }
                     self.finish_login(server, &profile).await
                 }
                 Err(error) => {
