@@ -192,8 +192,16 @@ impl LoreImpl {
         Some(Self {
             lines: lines
                 .iter()
-                .filter_map(NbtTag::extract_string)
-                .map(|line| TextComponent::text(line.to_owned()))
+                .filter_map(|t| {
+                    if let Some(s) = t.extract_string() {
+                        Some(TextComponent::text(s.to_owned()))
+                    } else if let NbtTag::Compound(c) = t {
+                        let text = c.get_string("text").unwrap_or_default();
+                        Some(TextComponent::text(text.to_owned()))
+                    } else {
+                        None
+                    }
+                })
                 .collect(),
         })
     }

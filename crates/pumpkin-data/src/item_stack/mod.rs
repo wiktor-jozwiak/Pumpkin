@@ -991,17 +991,29 @@ impl ItemStack {
         // Process any additional data in the components compound
         if let Some(tag) = compound.get_compound("components") {
             for (name, data) in &tag.child_tags {
-                if let Some(name) = name.strip_prefix("!") {
-                    let id = DataComponent::try_from_name(name)?;
-                    if id.is_persistent() {
-                        item_stack.patch.push((id, None));
+                if let Some(name) = name.strip_prefix('!') {
+                    if let Some(id) = DataComponent::try_from_name(name) {
+                        if id.is_persistent() {
+                            item_stack.patch.push((id, None));
+                        }
                     }
-                } else {
-                    let id = DataComponent::try_from_name(name)?;
+                } else if let Some(id) = DataComponent::try_from_name(name) {
                     if id.is_persistent() {
-                        item_stack.patch.push((id, Some(read_data(id, data)?)));
+                        if let Some(parsed) = read_data(id, data) {
+                            item_stack.patch.push((id, Some(parsed)));
+                        }
                     }
                 }
+            }
+        }
+
+        // Fallback for legacy items (e.g. 1.20.4 map item NBT {tag: {map: 331}})
+        if let Some(tag) = compound.get_compound("tag") {
+            if let Some(map_id) = tag.get_int("map") {
+                item_stack.patch.push((
+                    DataComponent::MapId,
+                    Some(Box::new(crate::data_component_impl::utility::MapIdImpl { id: map_id })),
+                ));
             }
         }
 

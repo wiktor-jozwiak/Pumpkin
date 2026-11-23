@@ -575129,6 +575129,19 @@ impl Block {
     #[track_caller]
     #[doc = r" Get the properties of the block."]
     pub fn from_properties(&self, props: &[Property]) -> Box<dyn BlockProperties> {
+        #[derive(Clone, Copy)]
+        struct FallbackBlockProperties;
+        impl BlockProperties for FallbackBlockProperties {
+            fn to_index(&self) -> u16 { 0 }
+            fn from_index(_index: u16) -> Self { Self }
+            fn handles_block_id(_id: BlockId) -> bool { true }
+            fn to_state_id(&self, block: &Block) -> BlockStateId { block.default_state.id }
+            fn from_state_id(_id: BlockStateId, _block: &Block) -> Self { Self }
+            fn default(_block: &Block) -> Self { Self }
+            fn to_props(&self) -> Vec<Property> { Vec::new() }
+            fn from_props(_props: &[Property], _block: &Block) -> Self { Self }
+        }
+
         match self.id {
             BlockId::TNT => Box::new(TntLikeProperties::from_props(props, self)),
             BlockId::BROWN_MUSHROOM_BLOCK
@@ -576110,7 +576123,7 @@ impl Block {
             BlockId::CACTUS | BlockId::SUGAR_CANE => {
                 Box::new(CactusLikeProperties::from_props(props, self))
             }
-            _ => panic!("Invalid props"),
+            _ => Box::new(FallbackBlockProperties),
         }
     }
     #[doc = r" Copies matching block properties from `source_state_id` of `source_block` onto `self`."]

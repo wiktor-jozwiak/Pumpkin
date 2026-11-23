@@ -184,6 +184,7 @@ impl ItemFrameEntity {
 
     pub fn set_invisible(&self, invisible: bool) {
         self.invisible.store(invisible, Ordering::Relaxed);
+        self.entity.set_invisible(invisible);
     }
 
     pub fn get_frame_item_stack(&self) -> ItemStack {
@@ -308,10 +309,8 @@ impl EntityBase for ItemFrameEntity {
         self.entity.data.store(i32::from(facing), Ordering::Relaxed);
         self.item_drop_chance
             .store(nbt.get_float("ItemDropChance").unwrap_or(1.0));
-        self.invisible.store(
-            nbt.get_bool("Invisible").unwrap_or(false),
-            Ordering::Relaxed,
-        );
+        let invisible = nbt.get_bool("Invisible").unwrap_or(false);
+        self.set_invisible(invisible);
         self.fixed
             .store(nbt.get_bool("Fixed").unwrap_or(false), Ordering::Relaxed);
     }
@@ -325,6 +324,9 @@ impl EntityBase for ItemFrameEntity {
     }
 
     fn init_data_tracker(&self) {
+        if self.invisible.load(Ordering::Relaxed) {
+            self.entity.set_invisible(true);
+        }
         let item_serializer = ItemStackSerializer::from(
             self.item_stack
                 .lock()
@@ -357,6 +359,15 @@ impl EntityBase for ItemFrameEntity {
         let rotation = self.get_rotation() as i32;
 
         let mut data = Vec::new();
+        let shared_flags = self.entity.flags.load(Ordering::Relaxed);
+        if shared_flags != 0 {
+            let meta_flags = Metadata::new(
+                pumpkin_data::tracked_data::entity::DATA_SHARED_FLAGS_ID,
+                shared_flags,
+            );
+            let _ = meta_flags.write(&mut data, &ver);
+        }
+
         let meta_item = Metadata::new(
             pumpkin_data::tracked_data::item_frame::ITEM,
             item_serializer,
