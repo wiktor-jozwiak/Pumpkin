@@ -3619,6 +3619,22 @@ impl pumpkin::plugin::player::HostJavaPlayer for PluginHostState {
         Ok(())
     }
 
+    fn send_raw_packet(
+        &mut self,
+        player: Resource<pumpkin::plugin::player::JavaPlayer>,
+        packet_id: i32,
+        payload: Vec<u8>,
+    ) -> wasmtime::Result<()> {
+        let player = self.get(&player)?.clone();
+
+        let client = player
+            .client
+            .java()
+            .ok_or_else(|| wasmtime::Error::msg("Not a java player"))?;
+        client.try_enqueue_raw_packet_direct(packet_id, &payload);
+        Ok(())
+    }
+
     fn drop(&mut self, rep: Resource<pumpkin::plugin::player::JavaPlayer>) -> wasmtime::Result<()> {
         self.drop(rep)
     }
